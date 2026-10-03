@@ -18,3 +18,5 @@
 请使用本仓库个人修改版的 Chrome 安装包或从此分支构建；上游官方扩展不包含这里新增的 ChatGPT 时间线和本地文件夹。详细步骤见发布页随附的 `使用说明.md`。两个新增功能默认关闭，需在扩展弹窗中启用并授权 `chatgpt.com` 站点。文件夹数据保存在浏览器本地；没有账号系统或云同步。ChatGPT 页面结构变化可能使时间线需要再次适配。
 
 本修改版继续按上游的 GPL-3.0 许可证分发。安装包同时附有 `LICENSE` 和 `THIRD_PARTY_NOTICES.md`；完整对应源码在本仓库。
+
+另有独立的 [Voyager Codex Personal](https://github.com/kocean9-freedom/voyager-codex-personal) 仓库。它受 Voyager 的交互目标启发，但不属于此浏览器扩展分叉，也不具备桌面应用原生聊天时间线。
