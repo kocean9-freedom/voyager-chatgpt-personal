@@ -42,6 +42,7 @@ export const StorageKeys = {
   // Folder system
   FOLDER_DATA: 'gvFolderData',
   FOLDER_DATA_AISTUDIO: 'gvFolderDataAIStudio',
+  FOLDER_DATA_CHATGPT: 'gvChatGptFolderData',
   FOLDER_ENABLED: 'geminiFolderEnabled',
   FOLDER_HIDE_ARCHIVED_CONVERSATIONS: 'geminiFolderHideArchivedConversations',
   FOLDER_HIDE_ARCHIVED_NUDGE_SHOWN: 'geminiFolderHideArchivedNudgeShown',

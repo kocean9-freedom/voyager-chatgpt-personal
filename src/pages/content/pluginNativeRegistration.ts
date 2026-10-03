@@ -9,6 +9,7 @@ import {
   startChatGptExportPlugin,
   stopChatGptExportPlugin,
 } from '@/features/plugins/builtin/chatgptExport/runtime';
+import { activateChatGptFolders } from '@/features/plugins/builtin/chatgptFolders';
 import { activateChatGptTemporaryHandoff } from '@/features/plugins/builtin/chatgptTemporaryHandoff';
 import {
   type NativeHandler,
@@ -22,6 +23,9 @@ export const NATIVE_HANDLER_BINDINGS: Readonly<Record<string, NativeHandler>> = 
   'voyager.chatgpt-export': {
     start: startChatGptExportPlugin,
     stop: stopChatGptExportPlugin,
+  },
+  'voyager.chatgpt-folders': {
+    activate: activateChatGptFolders,
   },
   'voyager.chatgpt-temporary-handoff': {
     activate: activateChatGptTemporaryHandoff,

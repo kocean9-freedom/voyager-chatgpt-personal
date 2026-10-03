@@ -49,6 +49,25 @@ describe('BUILTIN_PLUGINS', () => {
     expect(exportPlugin?.i18n?.zh?.name).toBe('ChatGPT · 对话导出');
   });
 
+  it('exposes ChatGPT local folders as a separate opt-in native plugin', () => {
+    const folders = BUILTIN_PLUGINS.find((plugin) => plugin.id === 'voyager.chatgpt-folders');
+    expect(folders?.matches).toEqual(['https://chatgpt.com/*', 'https://chat.openai.com/*']);
+    expect(folders?.contributes.domOps ?? []).toEqual([]);
+    expect(folders?.i18n?.zh?.name).toBe('ChatGPT · 本地文件夹');
+  });
+
+  it('exposes the ChatGPT timeline as a builtin native primitive', () => {
+    const timeline = BUILTIN_PLUGINS.find((plugin) => plugin.id === 'voyager.chatgpt-timeline');
+    expect(timeline?.matches).toEqual(['https://chatgpt.com/*', 'https://chat.openai.com/*']);
+    expect(timeline?.contributes.domOps).toEqual([
+      {
+        op: 'native',
+        handler: 'turnNavigator',
+        params: { turn: '[data-turn-id-container], [data-turn-key]' },
+      },
+    ]);
+  });
+
   it('keeps temporary-chat handoff separate from conversation export', () => {
     const handoff = BUILTIN_PLUGINS.find(
       (plugin) => plugin.id === 'voyager.chatgpt-temporary-handoff',

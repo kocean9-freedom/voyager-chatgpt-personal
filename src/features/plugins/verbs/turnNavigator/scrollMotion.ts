@@ -66,12 +66,15 @@ const ACTIVE_ANCHOR = 0.45;
 type ScrollTarget = HTMLElement | Window | null;
 
 function applyScroll(target: ScrollTarget, top: number, behavior: ScrollBehavior): void {
-  const clamped = Math.max(0, top);
   if (!target || target === window) {
-    window.scrollTo({ top: clamped, behavior });
+    window.scrollTo({ top: Math.max(0, top), behavior });
     return;
   }
   const container = target as HTMLElement;
+  const clamped =
+    getComputedStyle(container).flexDirection === 'column-reverse'
+      ? Math.min(0, top)
+      : Math.max(0, top);
   if (container.scrollTo) container.scrollTo({ top: clamped, behavior });
   else container.scrollTop = clamped;
 }

@@ -1,3 +1,5 @@
+> **个人修改版 / Personal fork:** 本仓库从 [voyager-crew/voyager](https://github.com/voyager-crew/voyager) 分叉，保留原项目的提交历史、版权声明及 GPL-3.0 许可证。在上游 Voyager 1.9.0 基础上增加了 ChatGPT 时间线、消息星标和本地文件夹。具体改动、验证范围和安装方法见 [PERSONAL_FORK.md](./PERSONAL_FORK.md)。本仓库不是上游项目的官方发布版。
+
 <div align="center">
   <img src="docs/public/logo.png" alt="Voyager logo" width="120" height="120">
   <h3>Make Your AI Experience Truly Yours ✨</h3>

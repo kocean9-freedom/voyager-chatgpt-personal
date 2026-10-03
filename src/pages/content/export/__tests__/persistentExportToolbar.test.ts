@@ -206,6 +206,33 @@ describe('persistentExportToolbar', () => {
     expect(handle.root.style.getPropertyValue('--gv-persistent-export-right')).toBe('252px');
   });
 
+  it('avoids a ChatGPT Share button after its test id changes', async () => {
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280);
+    const shareButton = document.createElement('button');
+    shareButton.textContent = '分享';
+    mockRect(shareButton, {
+      top: 8,
+      bottom: 48,
+      left: 1040,
+      right: 1140,
+      width: 100,
+      height: 40,
+    });
+    document.body.appendChild(shareButton);
+
+    const handle = mountPersistentExportToolbar({
+      label: '导出',
+      tooltip: '导出对话历史',
+      onClick: vi.fn(),
+    });
+    handle.root.setAttribute('data-gv-platform', 'chatgpt');
+
+    await nextFrame();
+
+    expect(handle.root.style.getPropertyValue('--gv-persistent-export-right')).toBe('252px');
+    shareButton.remove();
+  });
+
   it('ignores full-width top-bar containers so the toolbar stays top-right', async () => {
     vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280);
     const topBarActions = document.createElement('top-bar-actions');

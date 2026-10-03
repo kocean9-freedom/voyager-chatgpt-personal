@@ -23,10 +23,13 @@ import { TimelinePreviewPanel } from '@/pages/content/timeline/TimelinePreviewPa
 import type { StarredMessage } from '@/pages/content/timeline/starredTypes';
 import { showTimelineStyleCoachmark } from '@/pages/content/timeline/timelineStyleCoachmark';
 import type { PreviewMarkerData } from '@/pages/content/timeline/types';
+import { watchRouteChanges } from '@/pages/content/utils/routeWatcher';
 import { initI18n } from '@/utils/i18n';
 
 import { MAX_REGEX_INPUT_LENGTH } from '../../sites/safeRegex';
 import type { PrimitiveHandle } from '../types';
+import { chatGptConversationId, collectChatGptTimelineTurns } from './chatgptTurns';
+import { mergeMountedTurns } from './mountedTurnMerge';
 import {
   afterScrollSettles,
   navigationScrollBehavior,
@@ -109,7 +112,7 @@ type Dot = HTMLButtonElement & {
 // mounted at any time, so the DOM is never the full conversation. Markers are
 // therefore ACCUMULATED across refreshes (ids keyed by content hash, not mount
 // index) and stitched into order via turns shared between overlapping windows.
-interface Marker {
+export interface Marker {
   id: string;
   hash: string;
   summary: string;
@@ -194,6 +197,7 @@ export class TurnNavigator {
 
   /** `<siteId>:conv:<id>` from the site's route pattern, else a hash of the path. */
   private buildConversationId(input: string = location.href): string {
+    if (this.config.siteId === 'chatgpt') return chatGptConversationId(input) ?? '';
     return buildConversationId(this.config, input);
   }
 
@@ -231,6 +235,9 @@ export class TurnNavigator {
     this.observe();
     this.scope.on(window, 'hashchange', this.handleHash);
     this.scope.on(window, 'resize', this.handleResize);
+    if (this.config.siteId === 'chatgpt') {
+      this.scope.effect(() => watchRouteChanges(() => this.scheduleRefresh()), 'chatgpt-route');
+    }
     this.maybeShowStyleCoachmark();
   }
 
@@ -396,18 +403,48 @@ export class TurnNavigator {
   private async refresh(): Promise<void> {
     if (this.disposed) return;
     this.ensureUi();
-    if (this.buildConversationId() !== this.conversationId) this.resetConversationState();
+    const nextConversationId = this.buildConversationId();
+    if (nextConversationId !== this.conversationId) this.resetConversationState();
+    if (this.config.siteId === 'chatgpt') {
+      const visible = !!nextConversationId;
+      if (this.bar) {
+        this.bar.hidden = !visible;
+        this.bar.style.display = visible ? '' : 'none';
+      }
+      this.previewPanel?.setFloatingToggleSuppressed(!visible);
+      if (!visible) {
+        this.conversationId = '';
+        this.starredByHash.clear();
+        this.previewPanel?.close();
+        this.updatePreview();
+        this.hideTooltip();
+        return;
+      }
+    }
     await this.loadStars();
-    if (this.disposed) return;
+    if (this.disposed || nextConversationId !== this.buildConversationId()) return;
     const previousIds = this.markers.map((marker) => marker.id);
-    const turns = Array.from(document.querySelectorAll<HTMLElement>(this.config.turnSelector));
+    const previousSummaries = new Map(this.markers.map((marker) => [marker.id, marker.summary]));
+    const turns =
+      this.config.siteId === 'chatgpt'
+        ? collectChatGptTimelineTurns().map((turn) => turn.element)
+        : Array.from(document.querySelectorAll<HTMLElement>(this.config.turnSelector));
     if (turns[0]) this.setScrollTarget(this.getScrollTarget(turns[0]));
-    this.markers = this.mergeMountedTurns(turns);
+    this.markers =
+      this.config.siteId === 'chatgpt'
+        ? this.mergeChatGptTurns()
+        : mergeMountedTurns(this.markers, turns, (element) => this.computeElementCenter(element));
     this.markerCenters = this.computeMarkerCenters();
     const sameMarkers =
       previousIds.length === this.markers.length &&
       previousIds.every((id, index) => id === this.markers[index]?.id);
-    if (!sameMarkers || this.markers.some((marker) => !marker.dotElement)) this.renderDots();
+    if (
+      !sameMarkers ||
+      this.markers.some(
+        (marker) => !marker.dotElement || previousSummaries.get(marker.id) !== marker.summary,
+      )
+    )
+      this.renderDots();
     this.applyStarredState();
     this.refreshActive();
     this.handleHash();
@@ -422,148 +459,26 @@ export class TurnNavigator {
     if (this.trackContent) this.trackContent.textContent = '';
   }
 
-  /**
-   * Stitch the currently mounted turns into the accumulated marker list.
-   * Mounted turns are anchored to known markers by content hash (order
-   * preserving) and new turns are woven in next to their anchors. Known turns
-   * are NEVER dropped: Claude's virtualization can mount sparse,
-   * non-contiguous windows mid-transition (old and new window briefly
-   * coexisting), so a missing turn only means "not mounted right now", not
-   * "deleted" — mirroring the Gemini timeline's grow-only behaviour.
-   */
-  private mergeMountedTurns(turns: HTMLElement[]): Marker[] {
-    const known = this.markers;
-    const mounted = turns.map((element) => {
-      const summary = this.extractText(element);
-      return { element, summary, hash: hashString(summary) };
-    });
-    if (!mounted.length) return known;
-
-    const matchedKnownIndex = new Array<number>(mounted.length).fill(-1);
-    let searchFrom = 0;
-    for (let i = 0; i < mounted.length; i++) {
-      for (let j = searchFrom; j < known.length; j++) {
-        if (known[j].hash === mounted[i].hash) {
-          matchedKnownIndex[i] = j;
-          searchFrom = j + 1;
-          break;
-        }
+  private mergeChatGptTurns(): Marker[] {
+    const known = new Map(this.markers.map((marker) => [marker.id, marker]));
+    return collectChatGptTimelineTurns().map(({ id, element, summary }, index) => {
+      const previous = known.get(id);
+      element.dataset.gvTurnId = id;
+      if (previous) {
+        previous.element = element;
+        if (summary) previous.summary = summary;
+        return previous;
       }
-    }
-
-    const usedIds = new Set(known.map((marker) => marker.id));
-    const createMarker = (entry: (typeof mounted)[number]): Marker => {
-      const id = this.claimTurnId(entry.hash, usedIds);
-      entry.element.dataset.gvTurnId = id;
       return {
         id,
-        hash: entry.hash,
-        summary: entry.summary,
+        hash: id,
+        summary: summary || `Message ${index + 1}`,
         starred: false,
-        element: entry.element,
-        center: this.computeElementCenter(entry.element),
+        element,
+        center: this.computeElementCenter(element),
         dotElement: null,
       };
-    };
-
-    const firstMatch = matchedKnownIndex.findIndex((index) => index >= 0);
-    if (firstMatch === -1) {
-      // Jumped into an unexplored region: place the whole block by its
-      // vertical position relative to the accumulated turns.
-      const fresh = mounted.map(createMarker);
-      const insertAt = known.findIndex((marker) => marker.center > fresh[0].center);
-      return insertAt === -1
-        ? [...known, ...fresh]
-        : [...known.slice(0, insertAt), ...fresh, ...known.slice(insertAt)];
-    }
-
-    const beforeFirstAnchor: Marker[] = [];
-    const afterKnownIndex = new Map<number, Marker[]>();
-    // Fresh centre minus remembered centre per anchor: how far Claude's
-    // re-measuring has shifted this region since the neighbours were seen.
-    const anchorDrift = new Map<number, number>();
-    let lastAnchor = -1;
-    for (let i = 0; i < mounted.length; i++) {
-      const knownIndex = matchedKnownIndex[i];
-      if (knownIndex >= 0) {
-        const survivor = known[knownIndex];
-        anchorDrift.set(
-          knownIndex,
-          this.computeElementCenter(mounted[i].element) - survivor.center,
-        );
-        survivor.element = mounted[i].element;
-        survivor.summary = mounted[i].summary;
-        mounted[i].element.dataset.gvTurnId = survivor.id;
-        lastAnchor = knownIndex;
-        continue;
-      }
-      const marker = createMarker(mounted[i]);
-      if (lastAnchor === -1) {
-        beforeFirstAnchor.push(marker);
-      } else {
-        const bucket = afterKnownIndex.get(lastAnchor);
-        if (bucket) bucket.push(marker);
-        else afterKnownIndex.set(lastAnchor, [marker]);
-      }
-    }
-
-    // Anchors fix the order of the turns they match; a block of new turns is
-    // then filed by scroll position among the known turns between its two
-    // bounding anchors. "Right next to the anchor" is not enough: Claude keeps
-    // the latest turn mounted while the reader sits at the top, and that lone
-    // tail anchor would drag the conversation's opening turns behind the
-    // bottom window. Known centres are compared after the nearest anchor's
-    // drift so re-measured content does not skew the comparison.
-    const anchors = matchedKnownIndex.filter((index) => index >= 0);
-    const insertBefore = new Map<number, Marker[]>();
-    // A known turn between two anchors is assumed to have drifted like the
-    // anchor nearer to it; anchors on different sides of a re-measured region
-    // can carry very different drifts.
-    const driftAt = (index: number, prev: number | undefined, next: number | undefined): number => {
-      const prevDrift = prev === undefined ? undefined : anchorDrift.get(prev);
-      const nextDrift = next === undefined ? undefined : anchorDrift.get(next);
-      if (prevDrift === undefined) return nextDrift ?? 0;
-      if (nextDrift === undefined) return prevDrift;
-      return index - prev! <= next! - index ? prevDrift : nextDrift;
-    };
-    const file = (block: Marker[], prev: number | undefined, next: number | undefined): void => {
-      if (!block.length) return;
-      const lo = prev === undefined ? 0 : prev + 1;
-      const hi = next ?? known.length;
-      let at = hi;
-      for (let index = lo; index < hi; index++) {
-        if (known[index].center + driftAt(index, prev, next) > block[0].center) {
-          at = index;
-          break;
-        }
-      }
-      const bucket = insertBefore.get(at);
-      if (bucket) bucket.push(...block);
-      else insertBefore.set(at, block);
-    };
-    file(beforeFirstAnchor, undefined, anchors[0]);
-    anchors.forEach((anchor, rank) => {
-      const block = afterKnownIndex.get(anchor);
-      if (block) file(block, anchor, anchors[rank + 1]);
     });
-
-    const result: Marker[] = [];
-    known.forEach((marker, index) => {
-      const block = insertBefore.get(index);
-      if (block) result.push(...block);
-      result.push(marker);
-    });
-    const tail = insertBefore.get(known.length);
-    if (tail) result.push(...tail);
-    return result;
-  }
-
-  private claimTurnId(hash: string, usedIds: Set<string>): string {
-    const base = `c-${hash}`;
-    let id = base;
-    for (let n = 2; usedIds.has(id); n++) id = `${base}~${n}`;
-    usedIds.add(id);
-    return id;
   }
 
   private async loadStars(force = false): Promise<void> {
@@ -578,7 +493,7 @@ export class TurnNavigator {
     if (isCurrent())
       this.starredByHash = new Map(
         messages.map((message) => [
-          extractTurnHash(message.turnId),
+          this.config.siteId === 'chatgpt' ? message.turnId : extractTurnHash(message.turnId),
           { turnId: message.turnId, starredAt: message.starredAt },
         ]),
       );
@@ -850,6 +765,21 @@ export class TurnNavigator {
     if (!marker) return;
     this.navigationActiveLockUntil = Date.now() + NAVIGATION_ACTIVE_LOCK_MS;
     this.setActiveTurn(marker.id);
+    if (
+      this.config.siteId === 'chatgpt' &&
+      marker.element.isConnected &&
+      !this.hasMountedChatGptMessage(marker)
+    ) {
+      this.beginPendingNavigation(marker);
+      scrollElementToAnchor(
+        this.getScrollTarget(marker.element),
+        marker.element,
+        this.getScrollTop(),
+        this.getViewportHeight(),
+      );
+      this.schedulePendingNavigationHop();
+      return;
+    }
     if (marker.element.isConnected) {
       const center = this.computeElementCenter(marker.element);
       const anchorOffset = this.getViewportHeight() * ACTIVE_ANCHOR;
@@ -941,6 +871,16 @@ export class TurnNavigator {
     }
     this.navigationActiveLockUntil = Date.now() + NAVIGATION_ACTIVE_LOCK_MS;
     if (marker.element.isConnected) {
+      if (this.config.siteId === 'chatgpt' && !this.hasMountedChatGptMessage(marker)) {
+        scrollToCenter(
+          this.getScrollTarget(marker.element),
+          this.computeElementCenter(marker.element),
+          this.getViewportHeight(),
+          'instant',
+        );
+        this.schedulePendingNavigationHop();
+        return;
+      }
       this.clearPendingNavigation();
       scrollElementToAnchor(
         this.getScrollTarget(marker.element),
@@ -1025,6 +965,15 @@ export class TurnNavigator {
     );
   }
 
+  private hasMountedChatGptMessage(marker: Marker): boolean {
+    return (
+      marker.element.matches('[data-user-message-bubble], [data-chatgpt-selection-message-id]') ||
+      marker.element.querySelector(
+        '[data-message-author-role], section[data-turn], [class*="group/imagegen-image"], [data-user-message-bubble], [data-chatgpt-selection-message-id]',
+      ) !== null
+    );
+  }
+
   private isElementInViewport(element: HTMLElement): boolean {
     const rect = element.getBoundingClientRect();
     const top = this.getViewportTop();
@@ -1050,10 +999,6 @@ export class TurnNavigator {
     this.scheduleRefresh();
     this.previewPanel?.reposition();
   };
-
-  private extractText(element: HTMLElement): string {
-    return (element.textContent || '').replace(/\s+/g, ' ').trim();
-  }
 
   private getTitle(): string {
     const label = this.config.siteLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

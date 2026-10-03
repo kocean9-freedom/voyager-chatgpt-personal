@@ -1,4 +1,5 @@
 import { type PluginManifest, hasNativeOps } from '../types';
+import { CHATGPT_TIMELINE_MANIFEST } from './chatgptTimeline/manifest';
 
 /**
  * Built-in (bundled-in-the-extension) plugins — first-party data, NOT from the
@@ -18,6 +19,7 @@ import { type PluginManifest, hasNativeOps } from '../types';
  * them on in the popup.
  */
 export const BUILTIN_PLUGINS: readonly PluginManifest[] = [
+  CHATGPT_TIMELINE_MANIFEST,
   {
     id: 'voyager.formula-copy',
     name: 'Formula Copy',
@@ -261,6 +263,62 @@ export const BUILTIN_PLUGINS: readonly PluginManifest[] = [
     category: 'productivity',
     license: 'GPL-3.0-or-later',
     engine: '>=1.2.0',
+    tier: 'declarative',
+    matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+    contributes: {},
+  },
+  {
+    id: 'voyager.chatgpt-folders',
+    name: 'ChatGPT · Local Folders',
+    version: '1.0.0',
+    description: 'Organize saved ChatGPT conversation links in local folders with JSON backup.',
+    i18n: {
+      zh: {
+        name: 'ChatGPT · 本地文件夹',
+        description: '用本地文件夹整理 ChatGPT 对话链接，并通过 JSON 备份。',
+      },
+      zh_TW: {
+        name: 'ChatGPT · 本機資料夾',
+        description: '使用本機資料夾整理 ChatGPT 對話連結，並透過 JSON 備份。',
+      },
+      ja: {
+        name: 'ChatGPT · ローカルフォルダー',
+        description:
+          'ChatGPT の会話リンクをローカルフォルダーで整理し、JSON でバックアップします。',
+      },
+      ko: {
+        name: 'ChatGPT · 로컬 폴더',
+        description: 'ChatGPT 대화 링크를 로컬 폴더로 정리하고 JSON으로 백업합니다.',
+      },
+      fr: {
+        name: 'ChatGPT · Dossiers locaux',
+        description:
+          'Organisez les liens de conversation ChatGPT en dossiers locaux et sauvegardez-les en JSON.',
+      },
+      es: {
+        name: 'ChatGPT · Carpetas locales',
+        description:
+          'Organiza enlaces de conversaciones de ChatGPT en carpetas locales y guárdalos en JSON.',
+      },
+      pt: {
+        name: 'ChatGPT · Pastas locais',
+        description:
+          'Organize links de conversas do ChatGPT em pastas locais e faça backup em JSON.',
+      },
+      ru: {
+        name: 'ChatGPT · Локальные папки',
+        description:
+          'Сохраняйте ссылки на чаты ChatGPT в локальных папках с резервной копией JSON.',
+      },
+      ar: {
+        name: 'ChatGPT · مجلدات محلية',
+        description: 'نظّم روابط محادثات ChatGPT في مجلدات محلية مع نسخة احتياطية JSON.',
+      },
+    },
+    author: 'personal-build',
+    category: 'productivity',
+    license: 'GPL-3.0-or-later',
+    engine: '>=1.4.0',
     tier: 'declarative',
     matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
     contributes: {},

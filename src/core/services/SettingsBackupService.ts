@@ -174,6 +174,11 @@ export const NON_SETTINGS_BACKUP_POLICIES = {
     disposition: 'separate-file',
     reason: 'AI Studio folder content has its own Drive file.',
   },
+  [StorageKeys.FOLDER_DATA_CHATGPT]: {
+    storage: 'local',
+    disposition: 'device-local',
+    reason: 'ChatGPT folders remain local; users can export and import them as JSON.',
+  },
   [StorageKeys.FOLDER_FLOATING_NUDGE_SHOWN]: {
     storage: 'sync',
     disposition: 'deprecated',

@@ -91,7 +91,11 @@ export const turnNavigatorPrimitive: Primitive<TurnNavigatorParams> = {
 
   activate(scope, params, context) {
     const adapter = context.adapter;
-    const turnSelector = params.turn ?? adapter?.selectors.userTurn;
+    const turnSelector =
+      params.turn ??
+      (adapter?.id === 'chatgpt'
+        ? '[data-turn-id-container], [data-turn-key]'
+        : adapter?.selectors.userTurn);
     if (!turnSelector) {
       // The status machine reports needs-semantic before this can happen;
       // stay inert rather than index nothing.

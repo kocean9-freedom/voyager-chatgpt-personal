@@ -59,6 +59,18 @@ function calculateRightOffset(toolbarRoot: HTMLElement): number {
   const candidates = Array.from(document.querySelectorAll(TOP_RIGHT_AVOIDANCE_SELECTORS)).filter(
     (element): element is HTMLElement => isVisibleTopRightElement(element, toolbarRoot),
   );
+  if (toolbarRoot.dataset.gvPlatform === 'chatgpt') {
+    const shareButtons = document.querySelectorAll('button, [role="button"]');
+    for (const button of shareButtons) {
+      const label = `${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`.trim();
+      if (
+        /(?:^|\s)(?:分享|share)(?=\s|$|对话|聊天)/i.test(label) &&
+        isVisibleTopRightElement(button, toolbarRoot)
+      ) {
+        candidates.push(button);
+      }
+    }
+  }
   if (candidates.length === 0) return DEFAULT_RIGHT_OFFSET_PX;
 
   const leftMost = candidates.reduce(
