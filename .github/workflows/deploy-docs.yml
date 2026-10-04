@@ -68,6 +68,8 @@ jobs:
 
   deploy:
     needs: build
+    # The personal fork builds the docs but does not own the upstream Pages domain.
+    if: github.repository == 'voyager-crew/voyager'
     runs-on: ubuntu-latest
     name: Deploy
     permissions:
