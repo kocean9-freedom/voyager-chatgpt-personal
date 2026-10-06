@@ -3,6 +3,19 @@
 Read this file when changing account or route identity, extension message lifetimes, storage
 mirrors, clear markers, or Drive sync.
 
+## Star reads after extension reload must not create extension errors
+
+- **Trap:** Reloading an unpacked extension invalidates content scripts already open in ChatGPT tabs.
+  `StarredMessagesService` caught the expected `Extension context invalidated` result from
+  `chrome.runtime.sendMessage` but logged it with `console.error`, which Chrome then displayed as
+  an extension error. A later read could also attempt another request through the expired runtime.
+- **Rule:** Guard message sends with the extension context check and return the existing empty read
+  fallback for invalidated contexts without error logging. Keep logging unexpected communication
+  failures so genuine star storage problems remain visible. Reload an old tab to attach the new
+  content script; do not silently reload a page with a draft.
+- **Guard:** `src/pages/content/timeline/__tests__/StarredMessagesService.test.ts` covers live reads,
+  in-flight invalidation, expired runtimes, and unexpected errors.
+
 ## Route indexes are not durable account identities
 
 - **Trap:** Prompt History could show one Google account's prompts after another account reused the

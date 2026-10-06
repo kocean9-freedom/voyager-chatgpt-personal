@@ -2,25 +2,40 @@
  * Service for managing starred messages across all conversations
  * Uses message passing to background script to prevent race conditions
  */
+import {
+  hasValidExtensionContext,
+  isExtensionContextInvalidatedError,
+} from '@/core/utils/extensionContext';
+
 import { eventBus } from './EventBus';
 import type { StarredMessage, StarredMessagesData } from './starredTypes';
 
 export class StarredMessagesService {
+  private static logFailure(action: string, error: unknown): void {
+    if (isExtensionContextInvalidatedError(error) || !hasValidExtensionContext()) return;
+    console.error(`[StarredMessagesService] Failed to ${action}:`, error);
+  }
+
   /**
    * Send message to background script and wait for response
    */
   private static async sendMessage<T>(type: string, payload?: unknown): Promise<T> {
+    if (!hasValidExtensionContext()) throw new Error('Extension context invalidated.');
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage({ type, payload }, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-          return;
+        try {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          if (!response || !response.ok) {
+            reject(new Error(response?.error || 'Operation failed'));
+            return;
+          }
+          resolve(response as T);
+        } catch (error) {
+          reject(error);
         }
-        if (!response || !response.ok) {
-          reject(new Error(response?.error || 'Operation failed'));
-          return;
-        }
-        resolve(response as T);
       });
     });
   }
@@ -35,7 +50,7 @@ export class StarredMessagesService {
       );
       return response.data || { messages: {} };
     } catch (error) {
-      console.error('[StarredMessagesService] Failed to get starred messages:', error);
+      this.logFailure('get starred messages', error);
       return { messages: {} };
     }
   }
@@ -53,7 +68,7 @@ export class StarredMessagesService {
       );
       return response.messages || [];
     } catch (error) {
-      console.error('[StarredMessagesService] Failed to get starred messages:', error);
+      this.logFailure('get starred messages', error);
       return [];
     }
   }
@@ -79,7 +94,7 @@ export class StarredMessagesService {
         this.updateLegacyStorage(message.conversationId, message.turnId, 'add');
       }
     } catch (error) {
-      console.error('[StarredMessagesService] Failed to add starred message:', error);
+      this.logFailure('add starred message', error);
     }
   }
 
@@ -104,7 +119,7 @@ export class StarredMessagesService {
         this.updateLegacyStorage(conversationId, turnId, 'remove');
       }
     } catch (error) {
-      console.error('[StarredMessagesService] Failed to remove starred message:', error);
+      this.logFailure('remove starred message', error);
     }
   }
 
@@ -186,7 +201,7 @@ export class StarredMessagesService {
       );
       return response.messages || [];
     } catch (error) {
-      console.error('[StarredMessagesService] Failed to reconcile starred messages:', error);
+      this.logFailure('reconcile starred messages', error);
       return [];
     }
   }
