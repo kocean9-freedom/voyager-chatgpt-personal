@@ -361,7 +361,7 @@ B --> C`;
   });
 
   describe('Firefox Mermaid compatibility', () => {
-    it('parses representative model output with Mermaid 9.2.2 in strict mode', async () => {
+    it('parses representative model output with the Firefox Mermaid version in strict mode', async () => {
       const mermaidLegacy = (await import('mermaid-legacy')).default;
       mermaidLegacy.initialize({ startOnLoad: false, securityLevel: 'strict' });
 
@@ -371,7 +371,7 @@ B --> C`;
         用户->>系统: SSH 登录并检查日志
         系统-->>用户: 服务恢复正常`);
 
-      expect(mermaidLegacy.parse(source)).toBe(true);
+      expect(await mermaidLegacy.parse(source)).toBe(true);
     });
   });
 
