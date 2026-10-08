@@ -99,8 +99,9 @@ import type { StarredMessage, StarredMessagesData } from '@/pages/content/timeli
 import { getTranslation } from '@/utils/i18n';
 import type { TranslationKey } from '@/utils/translations';
 
-import { unregisterRegisteredContentScripts } from './contentScriptRegistration';
+import { reconcileRegisteredContentScripts } from './contentScriptRegistration';
 import { resolveOptionalHighlightSetting } from './highlightOptionalSetting';
+import { filterGrantedOrigins } from './originPermissions';
 import {
   isAllowedSyncContentSender,
   isHandledBackgroundRuntimeMessage,
@@ -909,23 +910,6 @@ function extractDomainsFromOrigins(origins?: string[]): string[] {
   return Array.from(new Set(domains));
 }
 
-async function filterGrantedOrigins(patterns: string[]): Promise<string[]> {
-  const granted: string[] = [];
-
-  for (const origin of patterns) {
-    try {
-      const hasPermission = await browser.permissions.contains({ origins: [origin] });
-      if (hasPermission) {
-        granted.push(origin);
-      }
-    } catch (error) {
-      console.warn('[Background] Failed to check permission for', origin, error);
-    }
-  }
-
-  return granted;
-}
-
 // Serialized for the same reason as the plugin sync below: storage and
 // permission listeners can both fire at once and double-inject.
 let customContentScriptSyncQueue: Promise<void> = Promise.resolve();
@@ -954,7 +938,7 @@ async function doSyncCustomContentScripts(domains?: string[]): Promise<void> {
     new Set((Array.isArray(domainList) ? domainList : []).flatMap(toMatchPatterns).filter(Boolean)),
   );
 
-  const grantedMatches = await filterGrantedOrigins(matchPatterns);
+  const grantedMatches = (await filterGrantedOrigins(matchPatterns)) ?? [];
 
   try {
     await chrome.scripting.unregisterContentScripts({ ids: [CUSTOM_CONTENT_SCRIPT_ID] });
@@ -1011,13 +995,14 @@ async function doSyncCustomContentScripts(domains?: string[]): Promise<void> {
  * Plugin enable-state is the single source of truth (storage.local); permissions
  * and registrations are derived from it.
  */
-async function getEnabledPluginOrigins(): Promise<string[]> {
+async function getEnabledPluginOrigins(): Promise<string[] | null> {
   let state: unknown = {};
   try {
     const stored = await chrome.storage.local.get({ [StorageKeys.PLUGINS_STATE]: {} });
     state = stored?.[StorageKeys.PLUGINS_STATE];
-  } catch {
-    return [];
+  } catch (error) {
+    console.warn('[Background] Failed to read enabled plugin state:', error);
+    return null;
   }
   const enabledIds = new Set<string>();
   if (state && typeof state === 'object' && !Array.isArray(state)) {
@@ -1026,6 +1011,9 @@ async function getEnabledPluginOrigins(): Promise<string[]> {
     }
   }
   const catalog = await loadPluginCatalog();
+  // Builtins are always bundled. An empty catalog while plugins are enabled
+  // means the listing failed, not that the user disabled all plugin sites.
+  if (enabledIds.size > 0 && catalog.length === 0) return null;
   const enabledPlugins = catalog.filter((plugin) => enabledIds.has(plugin.id));
   return pluginsToOriginPatterns(enabledPlugins);
 }
@@ -1122,15 +1110,9 @@ async function doSyncPluginContentScripts(): Promise<void> {
   if (!manifestContentScript) return;
 
   const origins = await getEnabledPluginOrigins();
-  const grantedMatches = await filterGrantedOrigins(origins);
-
-  await unregisterRegisteredContentScripts(chrome.scripting, [
-    PLUGIN_CONTENT_SCRIPT_ID,
-    PLUGIN_EMBEDDED_CONTENT_SCRIPT_ID,
-    CLAUDE_USAGE_MAIN_SCRIPT_ID,
-  ]);
-
-  if (!grantedMatches.length) return;
+  if (origins === null) return;
+  const grantedMatches = await filterGrantedOrigins(origins, true);
+  if (grantedMatches === null) return;
 
   const runAt =
     manifestContentScript.run_at === 'document_start'
@@ -1171,9 +1153,12 @@ async function doSyncPluginContentScripts(): Promise<void> {
         persistAcrossSessions: true,
       });
     }
-    if (registrations.length) {
-      await chrome.scripting.registerContentScripts(registrations);
-    }
+    await reconcileRegisteredContentScripts(chrome.scripting, registrations, [
+      PLUGIN_CONTENT_SCRIPT_ID,
+      PLUGIN_EMBEDDED_CONTENT_SCRIPT_ID,
+      CLAUDE_USAGE_MAIN_SCRIPT_ID,
+    ]);
+    if (!grantedMatches.length) return;
     // Inject into already-open matching tabs so the user sees the effect without
     // a manual reload.
     await injectVoyagerScriptIntoOpenTabs(topFrameOrigins, undefined, jsResources, cssResources);

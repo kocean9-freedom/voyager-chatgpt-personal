@@ -10,10 +10,77 @@
  * extension restarted.
  */
 
+export interface ManagedContentScriptRegistry {
+  getRegisteredContentScripts(filter?: {
+    ids?: string[];
+  }): Promise<chrome.scripting.RegisteredContentScript[]>;
+  registerContentScripts(scripts: chrome.scripting.RegisteredContentScript[]): Promise<void>;
+  updateContentScripts(scripts: chrome.scripting.RegisteredContentScript[]): Promise<void>;
+  unregisterContentScripts(filter?: { ids?: string[] }): Promise<void>;
+}
+
 export type ContentScriptRegistry = Pick<
-  typeof chrome.scripting,
+  ManagedContentScriptRegistry,
   'getRegisteredContentScripts' | 'unregisterContentScripts'
 >;
+
+function sameStringList(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  return JSON.stringify(left ?? []) === JSON.stringify(right ?? []);
+}
+
+function sameRegistration(
+  current: chrome.scripting.RegisteredContentScript,
+  desired: chrome.scripting.RegisteredContentScript,
+): boolean {
+  return (
+    sameStringList([...(current.matches ?? [])].sort(), [...(desired.matches ?? [])].sort()) &&
+    sameStringList(current.js, desired.js) &&
+    sameStringList(current.css, desired.css) &&
+    sameStringList(current.excludeMatches, desired.excludeMatches) &&
+    (current.allFrames ?? false) === (desired.allFrames ?? false) &&
+    (current.matchOriginAsFallback ?? false) === (desired.matchOriginAsFallback ?? false) &&
+    (current.runAt ?? 'document_idle') === (desired.runAt ?? 'document_idle') &&
+    (current.world ?? 'ISOLATED') === (desired.world ?? 'ISOLATED') &&
+    (current.persistAcrossSessions ?? true) === (desired.persistAcrossSessions ?? true)
+  );
+}
+
+/**
+ * Keep a live registration in place when it already matches the desired one.
+ * Register and update before removing obsolete ids, so a failed replacement
+ * cannot leave an enabled site without any content script.
+ */
+export async function reconcileRegisteredContentScripts(
+  scripting: ManagedContentScriptRegistry,
+  desired: readonly chrome.scripting.RegisteredContentScript[],
+  managedIds: readonly string[],
+): Promise<void> {
+  const managed = new Set(managedIds);
+  if (desired.some((script) => !managed.has(script.id))) {
+    throw new Error('Content script registration contains an unmanaged id');
+  }
+
+  const current = (await scripting.getRegisteredContentScripts({ ids: [...managed] })).filter(
+    (script) => managed.has(script.id),
+  );
+  const currentById = new Map(current.map((script) => [script.id, script]));
+  const desiredIds = new Set(desired.map((script) => script.id));
+  const additions = desired.filter((script) => !currentById.has(script.id));
+  const updates = desired.filter((script) => {
+    const existing = currentById.get(script.id);
+    return existing && !sameRegistration(existing, script);
+  });
+  const obsoleteIds = current
+    .filter((script) => !desiredIds.has(script.id))
+    .map((script) => script.id);
+
+  if (additions.length) await scripting.registerContentScripts([...additions]);
+  if (updates.length) await scripting.updateContentScripts([...updates]);
+  if (obsoleteIds.length) await unregisterRegisteredContentScripts(scripting, obsoleteIds);
+}
 
 /**
  * Unregister only the ids that are actually registered. Returns the ids that

@@ -316,6 +316,23 @@ while an active plugin has domOps`).
 - **Guard:** `src/pages/background/__tests__/contentScriptRegistration.test.ts`
   (`drops only the ids that exist so a never-registered companion cannot block the batch`).
 
+## Plugin script sync must keep a valid registration alive
+
+- **Trap:** The background worker deleted every plugin content-script registration on each startup
+  and storage sync, then recreated it asynchronously. If the worker stopped before recreation, or
+  a transient state, catalog, or permission read failed during a later sync, Chrome retained an empty
+  registration even while the ChatGPT timeline toggle and host permission remained enabled. New
+  conversation tabs then received no content script and showed no timeline.
+- **Rule:** Reconcile the desired registrations against Chrome's current list. Leave unchanged
+  scripts alone, update changed scripts in place, register missing scripts before removing obsolete
+  ids, and preserve existing registrations when enabled-plugin state or permissions cannot be read.
+- **Guard:** `src/pages/background/__tests__/contentScriptRegistration.test.ts`
+  (`keeps an unchanged live registration without a remove-and-register gap`,
+  `updates a changed registration in place and preserves it when the update fails`,
+  `registers a missing script and removes an obsolete managed script`,
+  `keeps an obsolete registration when adding its replacement fails`) and
+  `src/pages/background/__tests__/originPermissions.test.ts`.
+
 ## The docs plugin store imports the extension's logos and builtin plugins
 
 - **Trap:** The docs store kept hand copies of the platform marks and of the builtin plugin list.
