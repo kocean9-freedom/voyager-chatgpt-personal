@@ -72,6 +72,43 @@ beforeEach(() => {
 });
 
 describe('ChatGPT timeline', () => {
+  it('refreshes a route reached while the initial star read is pending', async () => {
+    document.body.innerHTML =
+      '<div data-turn-key="user-1"><div data-user-message-bubble="true">First chat</div></div>';
+    let releaseStars!: (messages: unknown[]) => void;
+    getStarredMessagesForConversation.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseStars = resolve;
+        }),
+    );
+    const scope = new PluginScope();
+    start(scope);
+    await flush();
+    history.replaceState({}, '', '/c/chat-2');
+    document.querySelector('[data-turn-key]')!.replaceWith(
+      Object.assign(document.createElement('div'), {
+        innerHTML:
+          '<div data-turn-key="user-2"><div data-user-message-bubble="true">Second chat</div></div>',
+      }),
+    );
+    releaseStars([]);
+    await flush();
+    try {
+      await vi.waitFor(
+        () =>
+          expect(
+            [...document.querySelectorAll('.timeline-dot')].map((dot) =>
+              dot.getAttribute('aria-label'),
+            ),
+          ).toEqual(['Second chat']),
+        { timeout: 1200 },
+      );
+    } finally {
+      await scope.dispose();
+    }
+  });
+
   it('indexes messages in current data-turn-key conversation rows', async () => {
     document.body.innerHTML = `
       <div data-turn-key="user-1">

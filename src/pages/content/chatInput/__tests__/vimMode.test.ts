@@ -1517,11 +1517,11 @@ describe('input Vim mode', () => {
     fireInputKey(input, 'Enter');
     input.textContent = '';
 
-    await new Promise((resolve) => setTimeout(resolve, 120));
-
-    const cursor = document.querySelector<HTMLElement>('.gv-input-vim-cursor');
-    expect(input.dataset.gvVimMode).toBe('insert');
-    expect(cursor?.hidden).toBe(true);
+    await vi.waitFor(() => {
+      const cursor = document.querySelector<HTMLElement>('.gv-input-vim-cursor');
+      expect(input.dataset.gvVimMode).toBe('insert');
+      expect(cursor?.hidden).toBe(true);
+    });
 
     cleanup();
   });
