@@ -3,6 +3,18 @@
 Read this file when changing folders, timeline navigation, sidebar behavior, chat width, drag and
 drop, or hover layout.
 
+## ChatGPT folder saves must publish only committed data
+
+- **Trap:** The personal ChatGPT folder plugin updated its panel before storage completed and reported
+  successful imports even after a rejected write. It also retained local-write signatures indefinitely,
+  so an external restore of a previously saved snapshot was ignored and could be overwritten later.
+- **Rule:** Serialize edits against the last saved data. Publish panel changes and success feedback
+  only after the write succeeds. Preserve existing data on failure and permit retries. Consume each
+  local-write echo once, clear failed-write signatures, and reject stale completion after an external
+  update or plugin disposal.
+- **Guard:** `src/features/plugins/builtin/chatgptFolders/index.test.ts` covers pending and failed
+  imports, retries, file-read errors, queued edits, external restores and local-write echo consumption.
+
 ## Active folder rows must use the navigation route ID
 
 - **Trap:** The active folder chat lost its background and accent even though the route and CSS were

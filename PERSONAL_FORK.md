@@ -20,3 +20,21 @@
 本修改版继续按上游的 GPL-3.0 许可证分发。安装包同时附有 `LICENSE` 和 `THIRD_PARTY_NOTICES.md`；完整对应源码在本仓库。
 
 另有独立的 [Voyager Codex Personal](https://github.com/kocean9-freedom/voyager-codex-personal) 仓库。它受 Voyager 的交互目标启发，但不属于此浏览器扩展分叉，也不具备桌面应用原生聊天时间线。
+
+## 2026-10-13 安全依赖检查
+
+本次修复覆盖了 shell-quote 的命令注入、文档工具间接使用旧 Vite、旧 KaTeX 和旧 UUID。
+锁文件统一使用 shell-quote 1.11.0、Vite 7.3.5、KaTeX 0.18.11 和 UUID 11.1.1。
+Vue 构建插件同步更新到兼容 Vite 7 的版本。升级后须执行 `bun run verify:pr`。
+
+以下依赖仍有未修复公告。它们位于开发和文档工具的依赖树中。
+仅凭这个位置不能认定漏洞没有影响。安全工作流继续报告并阻止定时检查通过。
+
+| 依赖             | 级别 | 来源                                       | 公告                                                                      |
+| ---------------- | ---- | ------------------------------------------ | ------------------------------------------------------------------------- |
+| braces 3.0.3     | 高危 | CRXJS、文档更新日志工具和 nodemon          | [递归栈耗尽](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)           |
+| node-forge 1.4.0 | 高危 | web-ext 与 web-ext-run 的 Android 调试依赖 | [签名验证缺陷](https://github.com/advisories/GHSA-86w9-cpqp-85rv)         |
+| sprintf-js 1.0.3 | 中危 | 文档更新日志工具的 YAML 解析依赖           | [精度参数导致拒绝服务](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) |
+
+截至检查时，上述公告没有可用修复版本。完整清除这些项需要验证替代工具或维护补丁。
+本次没有删除现有工具，也没有关闭或豁免安全检查。

@@ -230,6 +230,7 @@ export class TurnNavigator {
     await initI18n().catch(() => {});
     if (this.disposed) return;
     this.ensureUi();
+    const startupHref = location.href;
     await this.refresh();
     if (this.disposed) return;
     this.observe();
@@ -237,7 +238,9 @@ export class TurnNavigator {
     this.scope.on(window, 'resize', this.handleResize);
     if (this.config.siteId === 'chatgpt') {
       this.scope.effect(() => watchRouteChanges(() => this.scheduleRefresh()), 'chatgpt-route');
+      if (location.href !== startupHref) await this.refresh();
     }
+    if (this.disposed) return;
     this.maybeShowStyleCoachmark();
   }
 

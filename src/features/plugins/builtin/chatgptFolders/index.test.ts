@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { FolderData } from '@/core/types/folder';
 import { PluginScope } from '@/features/plugins/runtime/pluginScope';
 
 import { activateChatGptFolders } from './index';
 import { createFolder, emptyFolderData } from './model';
-import { CHATGPT_FOLDER_STORAGE_KEY } from './storage';
-import { exportChatGptFolders } from './storage';
+import { CHATGPT_FOLDER_STORAGE_KEY, exportChatGptFolders } from './storage';
 
 vi.mock('@/utils/i18n', () => ({
   getTranslationSyncUnsafe: (key: string) => key,
@@ -37,7 +37,137 @@ async function flush(): Promise<void> {
   await Promise.resolve();
 }
 
+function savedBackup(index: number): { version: number; data: FolderData } {
+  const [raw] = vi.mocked(chrome.storage.local.set).mock.calls.at(index)!;
+  return (raw as Record<string, unknown>)[CHATGPT_FOLDER_STORAGE_KEY] as {
+    version: number;
+    data: FolderData;
+  };
+}
+
 describe('ChatGPT folders plugin', () => {
+  it('rejects a queued addition when an import removes its selected folder', async () => {
+    const existing = createFolder(emptyFolderData(), 'Existing', null, 1, 'existing');
+    (chrome.storage.local.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      [CHATGPT_FOLDER_STORAGE_KEY]: JSON.parse(exportChatGptFolders(existing)),
+    });
+    let releaseSave!: () => void;
+    vi.mocked(chrome.storage.local.set).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    await activateChatGptFolders(scope);
+    document
+      .querySelector<HTMLButtonElement>('.gv-floating-fab')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const select = document.querySelector<HTMLSelectElement>('.gv-chatgpt-folders__select')!;
+    select.value = 'existing';
+    select.dispatchEvent(new Event('change'));
+    const input = document.querySelector<HTMLInputElement>(
+      '.gv-chatgpt-folders__controls input[type=file]',
+    )!;
+    const imported = createFolder(emptyFolderData(), 'Imported', null, 2, 'imported');
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [{ text: async () => exportChatGptFolders(imported) }],
+    });
+    input.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => expect(chrome.storage.local.set).toHaveBeenCalledTimes(1));
+    document.querySelector<HTMLButtonElement>('.gv-chatgpt-folders__add')!.click();
+    releaseSave();
+    await vi.waitFor(() =>
+      expect(document.querySelector('.gv-chatgpt-folders__status')?.textContent).toContain(
+        'Save failed',
+      ),
+    );
+    expect(chrome.storage.local.set).toHaveBeenCalledTimes(1);
+    expect(savedBackup(0).data).toMatchObject(imported);
+  });
+
+  it('serializes edits against the last saved data when the first write is pending', async () => {
+    let releaseSave!: () => void;
+    vi.mocked(chrome.storage.local.set).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    await activateChatGptFolders(scope);
+    document
+      .querySelector<HTMLButtonElement>('.gv-floating-fab')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const create = (name: string) => {
+      document
+        .querySelector<HTMLButtonElement>('.gv-floating-folder-panel__icon-button--create')!
+        .click();
+      document.querySelector<HTMLInputElement>('.gv-floating-folder-panel__inline-input')!.value =
+        name;
+      document
+        .querySelector<HTMLButtonElement>('.gv-floating-folder-panel__icon-button--save')!
+        .click();
+    };
+    create('First');
+    await vi.waitFor(() => expect(chrome.storage.local.set).toHaveBeenCalledTimes(1));
+    create('Second');
+    releaseSave();
+    await vi.waitFor(() => {
+      const select = document.querySelector<HTMLSelectElement>('.gv-chatgpt-folders__select')!;
+      expect([...select.options].map((option) => option.text)).toEqual([
+        'Choose folder',
+        'First',
+        'Second',
+      ]);
+    });
+    const saved = savedBackup(-1);
+    expect(saved.data.folders.map((folder: { name: string }) => folder.name)).toEqual([
+      'First',
+      'Second',
+    ]);
+  });
+
+  it('does not publish a pending import over a newer external restore', async () => {
+    let releaseSave!: () => void;
+    vi.mocked(chrome.storage.local.set).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    await activateChatGptFolders(scope);
+    document
+      .querySelector<HTMLButtonElement>('.gv-floating-fab')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const input = document.querySelector<HTMLInputElement>(
+      '.gv-chatgpt-folders__controls input[type=file]',
+    )!;
+    const imported = createFolder(emptyFolderData(), 'Imported', null, 1, 'imported');
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [{ text: async () => exportChatGptFolders(imported) }],
+    });
+    input.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => expect(chrome.storage.local.set).toHaveBeenCalledTimes(1));
+    const changed = vi.mocked(chrome.storage.onChanged.addListener).mock.calls.at(-1)![0];
+    changed(
+      { [CHATGPT_FOLDER_STORAGE_KEY]: { newValue: JSON.parse(exportChatGptFolders(imported)) } },
+      'local',
+    );
+    const restored = createFolder(emptyFolderData(), 'Restored', null, 2, 'restored');
+    changed(
+      { [CHATGPT_FOLDER_STORAGE_KEY]: { newValue: JSON.parse(exportChatGptFolders(restored)) } },
+      'local',
+    );
+    releaseSave();
+    await flush();
+    const select = document.querySelector<HTMLSelectElement>('.gv-chatgpt-folders__select')!;
+    expect([...select.options].map((option) => option.text)).toEqual(['Choose folder', 'Restored']);
+    expect(document.querySelector('.gv-chatgpt-folders__status')?.textContent).not.toBe(
+      'Import complete',
+    );
+  });
+
   it('mounts an opt-in launcher and saves the current chat through the floating panel', async () => {
     await activateChatGptFolders(scope);
     document
@@ -124,6 +254,138 @@ describe('ChatGPT folders plugin', () => {
       'local',
     );
     expect(document.querySelector('.gv-floating-folder-panel')?.textContent).toContain('Other tab');
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+  });
+
+  it('applies an external restore after consuming each local write echo', async () => {
+    await activateChatGptFolders(scope);
+    document
+      .querySelector<HTMLButtonElement>('.gv-floating-fab')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const changed = vi.mocked(chrome.storage.onChanged.addListener).mock.calls.at(-1)![0];
+    const create = (name: string) => {
+      document
+        .querySelector<HTMLButtonElement>('.gv-floating-folder-panel__icon-button--create')!
+        .click();
+      const input = document.querySelector<HTMLInputElement>(
+        '.gv-floating-folder-panel__inline-input',
+      )!;
+      input.value = name;
+      document
+        .querySelector<HTMLButtonElement>('.gv-floating-folder-panel__icon-button--save')!
+        .click();
+    };
+    create('First');
+    await vi.waitFor(() => expect(chrome.storage.local.set).toHaveBeenCalledTimes(1));
+    const first = savedBackup(0);
+    changed({ [CHATGPT_FOLDER_STORAGE_KEY]: { newValue: first } }, 'local');
+    create('Second');
+    await vi.waitFor(() => expect(chrome.storage.local.set).toHaveBeenCalledTimes(2));
+    const second = savedBackup(1);
+    changed({ [CHATGPT_FOLDER_STORAGE_KEY]: { newValue: second } }, 'local');
+
+    changed({ [CHATGPT_FOLDER_STORAGE_KEY]: { newValue: first } }, 'local');
+
+    const select = document.querySelector<HTMLSelectElement>('.gv-chatgpt-folders__select')!;
+    expect([...select.options].map((option) => option.text)).toEqual(['Choose folder', 'First']);
+    expect(chrome.storage.local.set).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports import success only after the storage write completes', async () => {
+    let releaseSave!: () => void;
+    vi.mocked(chrome.storage.local.set).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    await activateChatGptFolders(scope);
+    document
+      .querySelector<HTMLButtonElement>('.gv-floating-fab')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const input = document.querySelector<HTMLInputElement>(
+      '.gv-chatgpt-folders__controls input[type=file]',
+    )!;
+    const backup = createFolder(emptyFolderData(), 'Imported', null, 1, 'imported');
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [{ text: async () => exportChatGptFolders(backup) }],
+    });
+    input.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => expect(chrome.storage.local.set).toHaveBeenCalledTimes(1));
+    const pendingStatus = document.querySelector('.gv-chatgpt-folders__status')?.textContent;
+    expect(document.querySelector('.gv-floating-folder-panel')?.textContent).not.toContain(
+      'Imported',
+    );
+    releaseSave();
+    await flush();
+    expect(pendingStatus).not.toBe('Import complete');
+    await vi.waitFor(() =>
+      expect(document.querySelector('.gv-chatgpt-folders__status')?.textContent).toBe(
+        'Import complete',
+      ),
+    );
+  });
+
+  it('keeps saved folders when an import write fails and permits a retry', async () => {
+    const existing = createFolder(emptyFolderData(), 'Existing', null, 1, 'existing');
+    (chrome.storage.local.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      [CHATGPT_FOLDER_STORAGE_KEY]: JSON.parse(exportChatGptFolders(existing)),
+    });
+    vi.mocked(chrome.storage.local.set).mockRejectedValueOnce(new Error('QUOTA_BYTES exceeded'));
+    await activateChatGptFolders(scope);
+    document
+      .querySelector<HTMLButtonElement>('.gv-floating-fab')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const input = document.querySelector<HTMLInputElement>(
+      '.gv-chatgpt-folders__controls input[type=file]',
+    )!;
+    const backup = createFolder(emptyFolderData(), 'Imported', null, 2, 'imported');
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [{ text: async () => exportChatGptFolders(backup) }],
+    });
+    input.dispatchEvent(new Event('change'));
+    await vi.waitFor(() =>
+      expect(document.querySelector('.gv-chatgpt-folders__status')?.textContent).toContain(
+        'Save failed',
+      ),
+    );
+    const select = document.querySelector<HTMLSelectElement>('.gv-chatgpt-folders__select')!;
+    expect([...select.options].map((option) => option.text)).toEqual(['Choose folder', 'Existing']);
+    input.dispatchEvent(new Event('change'));
+    await vi.waitFor(() =>
+      expect(document.querySelector('.gv-chatgpt-folders__status')?.textContent).toBe(
+        'Import complete',
+      ),
+    );
+    expect([...select.options].map((option) => option.text)).toEqual(['Choose folder', 'Imported']);
+  });
+
+  it('reports a file read failure without changing saved folders', async () => {
+    await activateChatGptFolders(scope);
+    document
+      .querySelector<HTMLButtonElement>('.gv-floating-fab')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const input = document.querySelector<HTMLInputElement>(
+      '.gv-chatgpt-folders__controls input[type=file]',
+    )!;
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [
+        {
+          text: async () => {
+            throw new Error('unreadable file');
+          },
+        },
+      ],
+    });
+    input.dispatchEvent(new Event('change'));
+    await vi.waitFor(() =>
+      expect(document.querySelector('.gv-chatgpt-folders__status')?.textContent).toContain(
+        'Import failed',
+      ),
+    );
     expect(chrome.storage.local.set).not.toHaveBeenCalled();
   });
 

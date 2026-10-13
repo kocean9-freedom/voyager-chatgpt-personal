@@ -6,6 +6,7 @@ type Copy = {
   added: string;
   importFailed: string;
   imported: string;
+  saveFailed: string;
 };
 
 const copies: Record<string, Copy> = {
@@ -17,6 +18,7 @@ const copies: Record<string, Copy> = {
     added: 'Added to folder',
     importFailed: 'Import failed: invalid file',
     imported: 'Import complete',
+    saveFailed: 'Save failed. Please try again.',
   },
   zh: {
     choose: '选择文件夹',
@@ -26,6 +28,7 @@ const copies: Record<string, Copy> = {
     added: '已加入文件夹',
     importFailed: '导入失败：文件格式无效',
     imported: '导入成功',
+    saveFailed: '保存失败，请重试。',
   },
   zh_TW: {
     choose: '選擇資料夾',
@@ -35,6 +38,7 @@ const copies: Record<string, Copy> = {
     added: '已加入資料夾',
     importFailed: '匯入失敗：檔案格式無效',
     imported: '匯入成功',
+    saveFailed: '儲存失敗，請重試。',
   },
   ja: {
     choose: 'フォルダーを選択',
@@ -44,6 +48,7 @@ const copies: Record<string, Copy> = {
     added: 'フォルダーに追加しました',
     importFailed: 'インポート失敗: 無効なファイル',
     imported: 'インポート完了',
+    saveFailed: '保存に失敗しました。再試行してください。',
   },
   ko: {
     choose: '폴더 선택',
@@ -53,6 +58,7 @@ const copies: Record<string, Copy> = {
     added: '폴더에 추가됨',
     importFailed: '가져오기 실패: 잘못된 파일',
     imported: '가져오기 완료',
+    saveFailed: '저장하지 못했습니다. 다시 시도하세요.',
   },
   fr: {
     choose: 'Choisir un dossier',
@@ -62,6 +68,7 @@ const copies: Record<string, Copy> = {
     added: 'Ajouté au dossier',
     importFailed: 'Importation échouée : fichier invalide',
     imported: 'Importation terminée',
+    saveFailed: 'Échec de la sauvegarde. Réessayez.',
   },
   es: {
     choose: 'Elegir carpeta',
@@ -71,6 +78,7 @@ const copies: Record<string, Copy> = {
     added: 'Añadido a la carpeta',
     importFailed: 'Error al importar: archivo no válido',
     imported: 'Importación completada',
+    saveFailed: 'Error al guardar. Inténtalo de nuevo.',
   },
   pt: {
     choose: 'Escolher pasta',
@@ -80,6 +88,7 @@ const copies: Record<string, Copy> = {
     added: 'Adicionado à pasta',
     importFailed: 'Falha na importação: arquivo inválido',
     imported: 'Importação concluída',
+    saveFailed: 'Falha ao salvar. Tente novamente.',
   },
   ru: {
     choose: 'Выбрать папку',
@@ -89,6 +98,7 @@ const copies: Record<string, Copy> = {
     added: 'Добавлено в папку',
     importFailed: 'Ошибка импорта: неверный файл',
     imported: 'Импорт завершён',
+    saveFailed: 'Не удалось сохранить. Повторите попытку.',
   },
   ar: {
     choose: 'اختر مجلدًا',
@@ -98,6 +108,7 @@ const copies: Record<string, Copy> = {
     added: 'أُضيفت إلى المجلد',
     importFailed: 'فشل الاستيراد: ملف غير صالح',
     imported: 'اكتمل الاستيراد',
+    saveFailed: 'تعذّر الحفظ. حاول مرة أخرى.',
   },
 };
 

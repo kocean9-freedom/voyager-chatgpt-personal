@@ -1,5 +1,15 @@
 # Providers and plugins regression notes
 
+## ChatGPT timeline startup must catch navigation during the first star read
+
+- **Trap:** The initial star read could span a route change from one ChatGPT conversation to another.
+  The stale result was correctly discarded, but observers registered only after that read. They
+  therefore started on the new route without receiving the missed event, leaving the timeline empty.
+- **Rule:** After registering the route watcher, refresh again if the startup URL changed. Keep the
+  existing stale-result and disposal guards so old conversation stars never reach the new route.
+- **Guard:** `src/features/plugins/verbs/turnNavigator/chatgptTimeline.test.ts`
+  (`refreshes a route reached while the initial star read is pending`).
+
 ## Floating plugin UI must escape a host container that hides its overflow
 
 - **Trap:** The Vim HUD renders in the strip just above its mount. DeepSeek's
